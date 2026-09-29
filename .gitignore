@@ -1,0 +1,33 @@
+# ============ secrets ============
+# NEVER commit API keys or .env files
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+secrets.*
+config.local.*
+
+# ============ logs & temp ============
+*.log
+server.log
+nohup.out
+tmp/
+.temp/
+
+# ============ OS junk ============
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ============ editor ============
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ============ deps/build ============
+node_modules/
+dist/
+build/
+.cache/

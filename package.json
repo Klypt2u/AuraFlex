@@ -1,0 +1,12 @@
+{
+  "name": "auraflex",
+  "version": "1.0.0",
+  "description": "Premium streaming UI powered by TMDB + Vidsrc",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "posters": "node posters.cjs"
+  },
+  "license": "MIT"
+}
