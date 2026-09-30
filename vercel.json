@@ -1,7 +1,19 @@
 {
-  "rewrites": [
-    { "source": "/config.js", "destination": "/api/config" },
-    { "source": "/img", "destination": "/api/img" },
-    { "source": "/canary", "destination": "/api/canary" }
+  "builds": [
+    { "src": "index.html", "use": "@vercel/static" },
+    { "src": "styles.css", "use": "@vercel/static" },
+    { "src": "app.js", "use": "@vercel/static" },
+    { "src": "api/config.js", "use": "@vercel/node" },
+    { "src": "api/img.js", "use": "@vercel/node" },
+    { "src": "api/canary.js", "use": "@vercel/node" },
+    { "src": "api/tmdb.js", "use": "@vercel/node" }
+  ],
+  "routes": [
+    { "src": "/", "dest": "/index.html" },
+    { "src": "/config\\.js", "dest": "/api/config.js" },
+    { "src": "/img", "dest": "/api/img.js" },
+    { "src": "/canary", "dest": "/api/canary.js" },
+    { "src": "/tmdb", "dest": "/api/tmdb.js" },
+    { "src": "/(.*)", "dest": "/$1" }
   ]
 }

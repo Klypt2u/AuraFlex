@@ -15,7 +15,7 @@ const mime = {
   ".ico": "image/x-icon",
 };
 
-// ---- load .env (simple parser, no deps) ----
+// ---- load .env (simple parser, no deps); real environment variables win over .env ----
 const env = {};
 try {
   for (const line of fs.readFileSync(path.join(__dirname, ".env"), "utf8").split(/\r?\n/)) {
@@ -23,6 +23,9 @@ try {
     if (m && !line.trim().startsWith("#")) env[m[1]] = m[2].trim();
   }
 } catch { /* no .env — fine, demo mode */ }
+for (const k of ["TMDB_API_KEY", "VIDSRC_HOSTS", "PORT"]) {
+  if (process.env[k]) env[k] = process.env[k];
+}
 
 // ---- /config.js endpoint: injects the key, never exposes .env itself ----
 const hostList = (env.VIDSRC_HOSTS || "vidsrc.to,vidsrc.cc")
