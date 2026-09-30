@@ -18,8 +18,9 @@ const debounce = (fn, ms = 350) => {
 };
 
 const TMDB_IMG = "https://image.tmdb.org/t/p";
-// route images through the local server proxy when available (dodges ISP/browser blocks on image.tmdb.org)
-const IMG_PROXY = !!(window.AF_ENV && window.AF_ENV.imgProxy);
+// route images through the server proxy by default (dodges ISP/browser blocks on image.tmdb.org);
+// if a deployment lacks the /img endpoint the first failure flips IMG_PROXY off and art loads direct.
+let IMG_PROXY = (window.AF_ENV && window.AF_ENV.imgProxy) !== false;
 const poster = (p, size = "w500") => {
   if (!p) return null;
   const url = p.startsWith("http") ? p : `${TMDB_IMG}/${size}${p}`;
@@ -67,33 +68,57 @@ const PROVIDERS = {
 
 /* ---------------- TMDB layer ---------------- */
 const API = "https://api.themoviedb.org/3";
+// /api/tmdb is a server-side proxy that injects the deployment's TMDB key,
+// so catalog + search work even when the browser never receives a key.
 const cache = new Map();
 
 async function tmdb(path, params = {}) {
-  const url = new URL(API + path);
-  url.searchParams.set("api_key", CONFIG.key);
-  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
-  const ck = url.toString();
-  if (cache.has(ck)) return cache.get(ck);
-  const res = await fetch(ck);
-  if (!res.ok) {
-    const err = new Error(`TMDB ${res.status}`);
-    err.status = res.status;
-    throw err;
+  // route candidates: direct with browser key, then server proxies (/api/tmdb on Vercel,
+  // /tmdb on the local node server). Whichever answers first wins.
+  const routes = [];
+  if (CONFIG.key) {
+    const u = new URL(API + path);
+    u.searchParams.set("api_key", CONFIG.key);
+    for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v);
+    routes.push({ url: u.toString(), proxy: false });
   }
-  const data = await res.json();
-  cache.set(ck, data);
-  return data;
+  if ((window.AF_ENV && window.AF_ENV.tmdbProxy) || !CONFIG.key) {
+    for (const base of ["/api/tmdb", "/tmdb"]) {
+      const u = new URL(base, location.origin);
+      u.searchParams.set("path", path);
+      for (const [k, v] of Object.entries(params)) if (k !== "path") u.searchParams.set(k, v);
+      routes.push({ url: u.pathname + u.search, proxy: true });
+    }
+  }
+
+  let lastErr;
+  for (const r of routes) {
+    if (cache.has(r.url)) return cache.get(r.url);
+    try {
+      const res = await fetch(r.url);
+      if (!res.ok) {
+        const err = new Error(`TMDB ${res.status}`);
+        err.status = res.status;
+        if (r.proxy && (res.status === 404 || res.status === 405)) { lastErr = err; continue; } // no proxy on this host — next route
+        if (res.status === 401 || res.status === 503 || res.status === 502) { lastErr = err; continue; }
+        throw err;
+      }
+      const data = await res.json();
+      cache.set(r.url, data);
+      return data;
+    } catch (e) {
+      lastErr = e;
+      // network failure (TypeError) → try next route; last route rethrows below
+    }
+  }
+  throw lastErr || new Error("TMDB unreachable");
 }
 
 let DEMO = false;
 
 async function loadCatalog() {
-  if (!CONFIG.key) { DEMO = true; }
-  if (DEMO) {
-    bootNote("Demo mode — no TMDB key");
-    return demoData();
-  }
+  // no early demo return: even without a browser key the /api/tmdb server proxy
+  // can serve the catalog (key lives in the deployment env). Demo mode = last resort.
   try {
     bootNote("Pulling catalog from TMDB…");
     const [tr, trTv, pop, top, up, on] = await Promise.all([
@@ -332,15 +357,24 @@ function cardHTML(item) {
   </article>`;
 }
 
-// if a poster fails to load, retry once via the local /img proxy, then reveal the styled fallback
+// if a poster fails: direct → retry via /img proxy; if the proxy itself keeps failing
+// (deployment without the endpoint) flip IMG_PROXY off and fall back to direct, then styled fallback
+let proxyFails = 0;
 function watchPosterErrors() {
   document.addEventListener("error", (e) => {
     const img = e.target;
     if (img.tagName !== "IMG" || !img.closest(".card-poster")) return;
-    if (!img.dataset.retried && !img.src.includes("/img?u=")) {
-      img.dataset.retried = "1";
-      img.src = `/img?u=${encodeURIComponent(img.src)}`;
-      return;
+    if (!img.src.includes("/img?u=")) {
+      if (IMG_PROXY && !img.dataset.pretry) {
+        img.dataset.pretry = "1";
+        img.src = `/img?u=${encodeURIComponent(img.src)}`;
+        return;
+      }
+    } else if (!img.dataset.dretry) {
+      img.dataset.dretry = "1";
+      const orig = decodeURIComponent((img.src.split("/img?u=")[1] || "").replace(/&v=\d+$/, ""));
+      if (orig && ++proxyFails >= 3) IMG_PROXY = false; // proxy endpoint looks broken — future cards render direct
+      if (orig) { img.src = orig; return; }
     }
     img.parentElement?.querySelector(".card-fallback")?.removeAttribute("hidden");
   }, true);

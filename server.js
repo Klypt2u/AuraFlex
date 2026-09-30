@@ -36,6 +36,7 @@ window.AF_ENV = {
   tmdbKey: ${JSON.stringify(env.TMDB_API_KEY && env.TMDB_API_KEY !== "your_tmdb_v3_api_key_here" ? env.TMDB_API_KEY : "")},
   vidsrcHosts: ${JSON.stringify(hostList)},
   imgProxy: true,
+  tmdbProxy: true,
   demoArt: ${JSON.stringify(demoArt || null)}
 };`;
 
@@ -110,6 +111,32 @@ async function handleCanary(req, res) {
   res.end(JSON.stringify(result));
 }
 
+// ---- /tmdb proxy: same idea as /api/tmdb on Vercel — inject key server-side,
+// so search + catalog work even when the browser never receives one.
+async function handleTmdb(req, res) {
+  const send = (code, obj) => {
+    res.writeHead(code, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+    res.end(JSON.stringify(obj));
+  };
+  const key = (env.TMDB_API_KEY || "").trim();
+  if (!key || key === "your_tmdb_v3_api_key_here") { send(503, { error: "no_key_on_server" }); return; }
+  const tmdbPath = new URL(req.url, "http://x").searchParams.get("path") || "";
+  if (!/^\/[a-z0-9_\-\/.]*$/i.test(tmdbPath)) { send(400, { error: "bad_path" }); return; }
+  const url = new URL("https://api.themoviedb.org/3" + tmdbPath);
+  url.searchParams.set("api_key", key);
+  for (const [k, v] of new URL(req.url, "http://x").searchParams) {
+    if (k !== "path") url.searchParams.set(k, v);
+  }
+  try {
+    const r = await fetch(url, { headers: { "User-Agent": "auraflex/1.0" }, signal: AbortSignal.timeout(8000) });
+    const body = await r.text();
+    res.writeHead(r.status, { "Content-Type": r.headers.get("content-type") || "application/json", "Cache-Control": "public, max-age=120" });
+    res.end(body);
+  } catch (e) {
+    send(502, { error: "tmdb_proxy_failed", detail: String(e && e.message || e).slice(0, 200) });
+  }
+}
+
 const server = http.createServer((req, res) => {
   let p = decodeURIComponent(req.url.split("?")[0]);
   if (p === "/") p = "/index.html";
@@ -146,6 +173,11 @@ const server = http.createServer((req, res) => {
 
   if (p === "/canary") {
     handleCanary(req, res);
+    return;
+  }
+
+  if (p === "/tmdb") {
+    handleTmdb(req, res);
     return;
   }
 

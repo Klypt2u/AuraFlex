@@ -13,6 +13,7 @@ module.exports = (req, res) => {
       tmdbKey: key && key !== "your_tmdb_v3_api_key_here" ? key : "",
       vidsrcHosts: hosts.length ? hosts : ["vidsrc.to", "vidsrc.cc"],
       imgProxy: true,
+      tmdbProxy: true,
       demoArt: null,
     };
 
@@ -24,6 +25,6 @@ module.exports = (req, res) => {
   } catch {
     // never 500 — worst case, boot in demo mode
     res.setHeader("Content-Type", "application/javascript");
-    res.status(200).send('window.AF_ENV = { tmdbKey: "", vidsrcHosts: ["vidsrc.to","vidsrc.cc"], imgProxy: true, demoArt: null };');
+    res.status(200).send('window.AF_ENV = { tmdbKey: "", vidsrcHosts: ["vidsrc.to","vidsrc.cc"], imgProxy: true, tmdbProxy: true, demoArt: null };');
   }
 };
